@@ -29,7 +29,7 @@ export const PAD_CONFIGS: Record<ColorPad, PadConfig> = {
     id: 'red',
     name: 'Red',
     frequency: 310,
-    baseColor: '#bd2130',
+    baseColor: '#ffffff', //'#bd2130'
     highlightColor: '#dc3545',
     keyBinding: 'w',
   },
