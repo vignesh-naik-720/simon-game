@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Simon.Api/Simon.Api.csproj" />
+    <Project Path="src/Simon.Core/Simon.Core.csproj" />
+    <Project Path="src/Simon.Infrastructure/Simon.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Simon.IntegrationTests/Simon.IntegrationTests.csproj" />
+    <Project Path="tests/Simon.UnitTests/Simon.UnitTests.csproj" />
+  </Folder>
+</Solution>

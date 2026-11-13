@@ -1,0 +1,346 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Simon Game API",
+    "version": "1.0.0",
+    "description": "Backend API for Simon Game user authentication, score recording, and player personal best tracking backed by SQLite and .NET 10."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "Local development server (Docker / .NET 10)"
+    }
+  ],
+  "paths": {
+    "/api/auth/register": {
+      "post": {
+        "summary": "Register a new player account",
+        "operationId": "registerUser",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Account created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or username already taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "summary": "Authenticate an existing player",
+        "operationId": "loginUser",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid username or password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/user/me": {
+      "get": {
+        "summary": "Get authenticated user profile and highest score",
+        "operationId": "getCurrentUser",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User profile retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/scores": {
+      "post": {
+        "summary": "Record a completed game session score",
+        "operationId": "recordGameScore",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordScoreRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Score successfully recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordScoreResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/scores/my-history": {
+      "get": {
+        "summary": "Get historical game scores for the authenticated user",
+        "operationId": "getMyScoreHistory",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Score history list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GameScoreItem"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "RegisterRequest": {
+        "type": "object",
+        "required": ["username", "password"],
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 30,
+            "example": "player1"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 6,
+            "example": "Secret123!"
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["username", "password"],
+        "properties": {
+          "username": {
+            "type": "string",
+            "example": "player1"
+          },
+          "password": {
+            "type": "string",
+            "example": "Secret123!"
+          }
+        }
+      },
+      "AuthResponse": {
+        "type": "object",
+        "required": ["token", "user"],
+        "properties": {
+          "token": {
+            "type": "string",
+            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserProfileResponse"
+          }
+        }
+      },
+      "UserProfileResponse": {
+        "type": "object",
+        "required": ["id", "username", "highestScore", "createdAt"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "username": {
+            "type": "string"
+          },
+          "highestScore": {
+            "type": "integer",
+            "example": 15
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RecordScoreRequest": {
+        "type": "object",
+        "required": ["score", "roundsCompleted", "durationSeconds", "playedAt"],
+        "properties": {
+          "score": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 14
+          },
+          "roundsCompleted": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 14
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 45
+          },
+          "playedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-12T10:15:30Z"
+          }
+        }
+      },
+      "RecordScoreResponse": {
+        "type": "object",
+        "required": ["scoreId", "isNewHighest", "highestScore"],
+        "properties": {
+          "scoreId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "isNewHighest": {
+            "type": "boolean",
+            "example": true
+          },
+          "highestScore": {
+            "type": "integer",
+            "example": 14
+          }
+        }
+      },
+      "GameScoreItem": {
+        "type": "object",
+        "required": ["id", "score", "roundsCompleted", "playedAt", "durationSeconds"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "score": {
+            "type": "integer"
+          },
+          "roundsCompleted": {
+            "type": "integer"
+          },
+          "durationSeconds": {
+            "type": "integer"
+          },
+          "playedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error", "message"],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
+
