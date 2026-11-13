@@ -80,7 +80,7 @@ public static class ScoreEndpoints
                 return Results.Unauthorized();
             }
 
-            int takeCount = Math.Clamp(limit ?? 10, 1, 100);
+            int takeCount = Math.Clamp(limit ?? 20, 1, 100);
             var scores = await db.GameScores
                 .Where(s => s.UserId == userId.Value)
                 .OrderByDescending(s => s.PlayedAt)
@@ -98,22 +98,55 @@ public static class ScoreEndpoints
             return Results.Ok(scores);
         });
 
-        group.MapGet("/leaderboard", async (int? limit, SimonDbContext db) =>
+        // DELETE /api/scores/{id} (EF Core CRUD Operation)
+        group.MapDelete("/{id:guid}", async (Guid id, HttpContext context, SimonDbContext db, IAuthService auth) =>
         {
-            int takeCount = Math.Clamp(limit ?? 10, 1, 100);
-            var topPlayers = await db.Users
-                .Where(u => u.HighestScore > 0)
-                .OrderByDescending(u => u.HighestScore)
-                .Take(takeCount)
-                .Select(u => new
-                {
-                    username = u.Username,
-                    highestScore = u.HighestScore,
-                    registeredAt = u.CreatedAt,
-                })
-                .ToListAsync();
+            string? authHeader = context.Request.Headers.Authorization;
+            if (string.IsNullOrWhiteSpace(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.Unauthorized();
+            }
 
-            return Results.Ok(topPlayers);
+            string token = authHeader.Substring("Bearer ".Length).Trim();
+            Guid? userId = auth.ValidateToken(token);
+            if (userId == null)
+            {
+                return Results.Unauthorized();
+            }
+
+            var score = await db.GameScores.FindAsync(id);
+            if (score == null)
+            {
+                return Results.NotFound(new { error = "Score record not found." });
+            }
+
+            if (score.UserId != userId.Value)
+            {
+                return Results.Forbid();
+            }
+
+            var user = await db.Users.FindAsync(userId.Value);
+            db.GameScores.Remove(score);
+
+            if (user != null && score.Score == user.HighestScore)
+            {
+                // Recalculate highest score from remaining records using EF Core
+                int newHighest = await db.GameScores
+                    .Where(s => s.UserId == user.Id && s.Id != id)
+                    .Select(s => (int?)s.Score)
+                    .MaxAsync() ?? 0;
+
+                user.HighestScore = newHighest;
+                user.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+
+            await db.SaveChangesAsync();
+
+            return Results.Ok(new
+            {
+                success = true,
+                newHighestScore = user?.HighestScore ?? 0,
+            });
         });
     }
 

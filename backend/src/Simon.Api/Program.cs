@@ -43,6 +43,7 @@ using (var scope = app.Services.CreateScope())
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy", database = "sqlite", timestamp = DateTimeOffset.UtcNow }));
 app.MapAuthEndpoints();
 app.MapScoreEndpoints();
+app.MapLeaderboardEndpoints();
 
 app.Run();
 

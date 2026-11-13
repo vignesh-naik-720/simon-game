@@ -6,16 +6,20 @@ import { TurnTimer } from './engine/timer';
 import { useAudioHooks } from './audio/use-audio';
 import { SimonBoard } from './components/SimonBoard';
 import { ScoreHeader } from './components/ScoreHeader';
+import { LeaderboardSidebar } from './components/LeaderboardSidebar';
 import { AuthModal } from './components/AuthModal';
 import { GameOverModal } from './components/GameOverModal';
 import { AuthApi, UserProfile } from './api/auth-api';
 import { ScoresApi } from './api/scores-api';
+import { LeaderboardApi, GlobalChampionInfo } from './api/leaderboard-api';
 
 export const App: React.FC = () => {
   const engineRef = useRef<SimonEngine>(new SimonEngine());
   const playbackRunnerRef = useRef<PlaybackRunner>(new PlaybackRunner());
   const [gameState, setGameState] = useState<GameEngineState>(engineRef.current.getState());
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [globalChampion, setGlobalChampion] = useState<GlobalChampionInfo | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const sessionStartRef = useRef<number>(Date.now());
 
@@ -38,8 +42,18 @@ export const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // Check existing session token on mount
+  const loadGlobalChampion = useCallback(() => {
+    LeaderboardApi.getGlobalChampion().then((champion) => {
+      if (champion) {
+        setGlobalChampion(champion);
+      }
+    });
+  }, []);
+
+  // Check existing session token on mount & fetch global champion
   useEffect(() => {
+    loadGlobalChampion();
+
     AuthApi.getCurrentUser()
       .then((profile) => {
         setUser(profile);
@@ -51,7 +65,7 @@ export const App: React.FC = () => {
       .catch(() => {
         // Unauthenticated guest
       });
-  }, []);
+  }, [loadGlobalChampion]);
 
   // Handle sequence demonstration when round advances or game starts
   useEffect(() => {
@@ -74,7 +88,7 @@ export const App: React.FC = () => {
     }
   }, [gameState.status, gameState.currentRound, gameState.sequence, playPadSound]);
 
-  // Handle Game Over: submit score to backend
+  // Handle Game Over: submit score to backend & trigger leaderboard refresh
   useEffect(() => {
     if (gameState.status === 'GAME_OVER') {
       timerRef.current.stop();
@@ -92,13 +106,16 @@ export const App: React.FC = () => {
             if (res.isNewHighest) {
               setUser((prev) => (prev ? { ...prev, highestScore: res.highestScore } : null));
             }
+            // Trigger leaderboard and global champion re-fetch
+            setRefreshTrigger((prev) => prev + 1);
+            loadGlobalChampion();
           })
           .catch(() => {
             // Handled via offline storage
           });
       }
     }
-  }, [gameState.status, gameState.currentScore, gameState.currentRound, user]);
+  }, [gameState.status, gameState.currentScore, gameState.currentRound, user, loadGlobalChampion]);
 
   // Handle auto-pause on window blur
   useEffect(() => {
@@ -163,12 +180,25 @@ export const App: React.FC = () => {
       type: 'SYNC_HIGHEST_SCORE',
       highestScore: loggedUser.highestScore,
     });
+    setRefreshTrigger((prev) => prev + 1);
+    loadGlobalChampion();
   };
 
   const handleLogout = () => {
     AuthApi.logout();
     setUser(null);
+    engineRef.current.dispatch({ type: 'RESET' });
+    setRefreshTrigger((prev) => prev + 1);
+    loadGlobalChampion();
   };
+
+  const handleScoreDeleted = (newHighest: number) => {
+    setUser((prev) => (prev ? { ...prev, highestScore: newHighest } : null));
+    setRefreshTrigger((prev) => prev + 1);
+    loadGlobalChampion();
+  };
+
+  const personalBest = user ? user.highestScore : 0;
 
   return (
     <div
@@ -184,129 +214,153 @@ export const App: React.FC = () => {
         alignItems: 'center',
       }}
     >
-      <div style={{ width: '100%', maxWidth: '520px' }}>
+      <div style={{ width: '100%', maxWidth: '980px' }}>
         <ScoreHeader
           currentRound={gameState.currentRound}
           currentScore={gameState.currentScore}
-          highestScore={gameState.highestScore}
+          personalBest={personalBest}
+          globalChampion={globalChampion}
           user={user}
           onOpenAuth={() => setIsAuthOpen(true)}
           onLogout={handleLogout}
         />
 
-        {/* Status Indicator Banner */}
+        {/* 2-Column Responsive Layout: Game Arena on Left, Leaderboard on Right */}
         <div
           style={{
-            textAlign: 'center',
-            padding: '12px',
-            borderRadius: '12px',
-            marginBottom: '20px',
-            backgroundColor:
-              gameState.status === 'DEMONSTRATING'
-                ? 'rgba(0, 212, 255, 0.15)'
-                : gameState.status === 'PLAYER_TURN'
-                ? 'rgba(40, 167, 69, 0.15)'
-                : gameState.status === 'PAUSED'
-                ? 'rgba(255, 193, 7, 0.15)'
-                : 'rgba(255, 255, 255, 0.05)',
-            border:
-              gameState.status === 'DEMONSTRATING'
-                ? '1px solid #00d4ff'
-                : gameState.status === 'PLAYER_TURN'
-                ? '1px solid #28a745'
-                : gameState.status === 'PAUSED'
-                ? '1px solid #ffc107'
-                : '1px solid rgba(255, 255, 255, 0.1)',
-            fontWeight: 'bold',
-            fontSize: '1rem',
-            color:
-              gameState.status === 'DEMONSTRATING'
-                ? '#00d4ff'
-                : gameState.status === 'PLAYER_TURN'
-                ? '#28a745'
-                : gameState.status === 'PAUSED'
-                ? '#ffc107'
-                : '#aaaaaa',
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            alignItems: 'flex-start',
+            gap: '32px',
           }}
         >
-          {gameState.status === 'IDLE' && 'Press "Start Game" to begin'}
-          {gameState.status === 'DEMONSTRATING' && '👀 Watch and listen to the sequence...'}
-          {gameState.status === 'PLAYER_TURN' && `👉 Your turn! Repeat step ${gameState.playerStepIndex + 1} of ${gameState.sequence.length}`}
-          {gameState.status === 'PAUSED' && '⏸️ Game Paused'}
-          {gameState.status === 'GAME_OVER' && '💥 Game Over!'}
-        </div>
-
-        {/* 4-Pad Simon Board */}
-        <SimonBoard
-          activePad={gameState.activePad}
-          isPlayerTurn={gameState.status === 'PLAYER_TURN'}
-          onPadPress={handlePadPress}
-        />
-
-        {/* Controls Bar */}
-        <div style={{ display: 'flex', gap: '12px', marginTop: '28px', justifyContent: 'center' }}>
-          {gameState.status === 'IDLE' && (
-            <button
-              type="button"
-              onClick={handleStartGame}
+          {/* Left Column: Simon Game Arena */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '340px' }}>
+            {/* Status Indicator Banner */}
+            <div
               style={{
-                padding: '14px 32px',
-                borderRadius: '30px',
-                border: 'none',
-                backgroundColor: '#00d4ff',
-                color: '#000000',
+                width: '100%',
+                maxWidth: '420px',
+                textAlign: 'center',
+                padding: '12px',
+                borderRadius: '12px',
+                marginBottom: '20px',
+                backgroundColor:
+                  gameState.status === 'DEMONSTRATING'
+                    ? 'rgba(0, 212, 255, 0.15)'
+                    : gameState.status === 'PLAYER_TURN'
+                    ? 'rgba(40, 167, 69, 0.15)'
+                    : gameState.status === 'PAUSED'
+                    ? 'rgba(255, 193, 7, 0.15)'
+                    : 'rgba(255, 255, 255, 0.05)',
+                border:
+                  gameState.status === 'DEMONSTRATING'
+                    ? '1px solid #00d4ff'
+                    : gameState.status === 'PLAYER_TURN'
+                    ? '1px solid #28a745'
+                    : gameState.status === 'PAUSED'
+                    ? '1px solid #ffc107'
+                    : '1px solid rgba(255, 255, 255, 0.1)',
                 fontWeight: 'bold',
-                fontSize: '1.1rem',
-                cursor: 'pointer',
-                boxShadow: '0 8px 24px rgba(0, 212, 255, 0.4)',
-                letterSpacing: '1px',
+                fontSize: '1rem',
+                color:
+                  gameState.status === 'DEMONSTRATING'
+                    ? '#00d4ff'
+                    : gameState.status === 'PLAYER_TURN'
+                    ? '#28a745'
+                    : gameState.status === 'PAUSED'
+                    ? '#ffc107'
+                    : '#aaaaaa',
               }}
             >
-              ▶ Start Game
-            </button>
-          )}
+              {gameState.status === 'IDLE' && 'Press "Start Game" to begin'}
+              {gameState.status === 'DEMONSTRATING' && '👀 Watch and listen to the sequence...'}
+              {gameState.status === 'PLAYER_TURN' && `👉 Your turn! Repeat step ${gameState.playerStepIndex + 1} of ${gameState.sequence.length}`}
+              {gameState.status === 'PAUSED' && '⏸️ Game Paused'}
+              {gameState.status === 'GAME_OVER' && '💥 Game Over!'}
+            </div>
 
-          {(gameState.status === 'PLAYER_TURN' || gameState.status === 'PAUSED') && (
-            <button
-              type="button"
-              onClick={handlePauseToggle}
-              style={{
-                padding: '12px 24px',
-                borderRadius: '24px',
-                border: '1px solid rgba(255,255,255,0.2)',
-                backgroundColor: '#222233',
-                color: '#ffffff',
-                fontWeight: 'bold',
-                fontSize: '0.95rem',
-                cursor: 'pointer',
-              }}
-            >
-              {gameState.status === 'PAUSED' ? '▶ Resume' : '⏸ Pause'}
-            </button>
-          )}
+            {/* 4-Pad Simon Board */}
+            <SimonBoard
+              activePad={gameState.activePad}
+              isPlayerTurn={gameState.status === 'PLAYER_TURN'}
+              onPadPress={handlePadPress}
+            />
 
-          {gameState.status !== 'IDLE' && (
-            <button
-              type="button"
-              onClick={handleRestart}
-              style={{
-                padding: '12px 24px',
-                borderRadius: '24px',
-                border: '1px solid rgba(255,255,255,0.2)',
-                backgroundColor: '#222233',
-                color: '#ff5577',
-                fontWeight: 'bold',
-                fontSize: '0.95rem',
-                cursor: 'pointer',
-              }}
-            >
-              🔄 Reset Game
-            </button>
-          )}
-        </div>
+            {/* Controls Bar */}
+            <div style={{ display: 'flex', gap: '12px', marginTop: '24px', justifyContent: 'center' }}>
+              {gameState.status === 'IDLE' && (
+                <button
+                  type="button"
+                  onClick={handleStartGame}
+                  style={{
+                    padding: '14px 32px',
+                    borderRadius: '30px',
+                    border: 'none',
+                    backgroundColor: '#00d4ff',
+                    color: '#000000',
+                    fontWeight: 'bold',
+                    fontSize: '1.1rem',
+                    cursor: 'pointer',
+                    boxShadow: '0 8px 24px rgba(0, 212, 255, 0.4)',
+                    letterSpacing: '1px',
+                  }}
+                >
+                  ▶ Start Game
+                </button>
+              )}
 
-        <div style={{ textAlign: 'center', marginTop: '24px', fontSize: '0.8rem', color: '#555566' }}>
-          Keyboard controls: <strong>Q</strong> (Green) &bull; <strong>W</strong> (Red) &bull; <strong>A</strong> (Yellow) &bull; <strong>S</strong> (Blue)
+              {(gameState.status === 'PLAYER_TURN' || gameState.status === 'PAUSED') && (
+                <button
+                  type="button"
+                  onClick={handlePauseToggle}
+                  style={{
+                    padding: '12px 24px',
+                    borderRadius: '24px',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    backgroundColor: '#222233',
+                    color: '#ffffff',
+                    fontWeight: 'bold',
+                    fontSize: '0.95rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {gameState.status === 'PAUSED' ? '▶ Resume' : '⏸ Pause'}
+                </button>
+              )}
+
+              {gameState.status !== 'IDLE' && (
+                <button
+                  type="button"
+                  onClick={handleRestart}
+                  style={{
+                    padding: '12px 24px',
+                    borderRadius: '24px',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    backgroundColor: '#222233',
+                    color: '#ff5577',
+                    fontWeight: 'bold',
+                    fontSize: '0.95rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  🔄 Reset Game
+                </button>
+              )}
+            </div>
+
+            <div style={{ textAlign: 'center', marginTop: '20px', fontSize: '0.8rem', color: '#555566' }}>
+              Keyboard controls: <strong>Q</strong> (Green) &bull; <strong>W</strong> (Red) &bull; <strong>A</strong> (Yellow) &bull; <strong>S</strong> (Blue)
+            </div>
+          </div>
+
+          {/* Right Column: Live Leaderboard Sidebar */}
+          <LeaderboardSidebar
+            user={user}
+            refreshTrigger={refreshTrigger}
+            onScoreDeleted={handleScoreDeleted}
+          />
         </div>
       </div>
 
@@ -320,7 +374,7 @@ export const App: React.FC = () => {
         isOpen={gameState.status === 'GAME_OVER'}
         score={gameState.currentScore}
         roundsCompleted={Math.max(0, gameState.currentRound - 1)}
-        highestScore={gameState.highestScore}
+        highestScore={Math.max(personalBest, gameState.currentScore)}
         user={user}
         onPlayAgain={handleRestart}
         onOpenAuth={() => setIsAuthOpen(true)}
