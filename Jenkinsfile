@@ -13,42 +13,24 @@ pipeline {
             }
         }
 
-        stage('Test Backend (.NET 10)') {
+        stage('Build & Test Backend') {
             steps {
-                echo '🧪 Running Backend Unit and Integration tests...'
-                // Run tests inside the official .NET 10 SDK container
-                sh '''
-                    docker run --rm -v "$(pwd)/backend":/app -w /app mcr.microsoft.com/dotnet/sdk:10.0 \
-                        dotnet test Simon.slnx -c Release
-                '''
+                echo '🧪 Building and packaging Backend (.NET 10 + SQLite)...'
+                sh 'docker build -t simon-backend:latest -f backend/Dockerfile backend'
             }
         }
 
-        stage('Test Frontend (React)') {
+        stage('Build & Test Frontend') {
             steps {
-                echo '🧪 Running Frontend Unit tests and TypeScript compilation...'
-                // Run tests inside the official Node 20 container
-                sh '''
-                    docker run --rm -v "$(pwd)/client":/app -w /app node:20-alpine sh -c "
-                        npm ci && \
-                        npm test && \
-                        npm run build
-                    "
-                '''
-            }
-        }
-
-        stage('Build Docker Images') {
-            steps {
-                echo '🐳 Building production Docker images for Backend and Frontend...'
-                sh 'docker-compose build'
+                echo '🧪 Running tests and compiling Frontend (React + Vite)...'
+                sh 'docker build -t simon-frontend:latest -f client/Dockerfile client'
             }
         }
 
         stage('Deploy Application') {
             steps {
-                echo '🚀 Deploying containers via Docker Compose...'
-                sh 'docker-compose down'
+                echo '🚀 Launching services via Docker Compose...'
+                sh 'docker-compose down || true'
                 sh 'docker-compose up -d'
             }
         }
@@ -56,7 +38,6 @@ pipeline {
         stage('Smoke Test & Health Check') {
             steps {
                 echo '🩺 Verifying deployment health...'
-                // Wait up to 30 seconds for the backend API to respond
                 sh '''
                     for i in $(seq 1 15); do
                         if curl -s -f http://localhost:5000/api/health; then
@@ -75,7 +56,7 @@ pipeline {
 
     post {
         always {
-            echo '🧹 Pipeline execution finished.'
+            echo '📋 Pipeline execution completed.'
         }
         success {
             echo '🎉 Deployment succeeded! Web App is live on http://localhost:3000'
@@ -85,4 +66,3 @@ pipeline {
         }
     }
 }
-
