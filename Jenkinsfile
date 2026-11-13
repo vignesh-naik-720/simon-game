@@ -29,9 +29,36 @@ pipeline {
 
         stage('Deploy Application') {
             steps {
-                echo '🚀 Launching services via Docker Compose...'
-                sh 'docker-compose down || true'
-                sh 'docker-compose up -d'
+                echo '🚀 Deploying services...'
+                sh '''
+                    # 1. Clean up any existing containers or port conflicts
+                    docker rm -f simon-backend simon-frontend 2>/dev/null || true
+                    docker network create simon-net 2>/dev/null || true
+
+                    # 2. Deploy using Docker Compose (or Docker Run fallback)
+                    if docker-compose up -d --no-build 2>/dev/null; then
+                        echo "Containers deployed via docker-compose."
+                    else
+                        echo "Deploying via direct Docker runtime..."
+                        docker run -d \
+                            --name simon-backend \
+                            --network simon-net \
+                            --network-alias backend \
+                            --restart unless-stopped \
+                            -p 5000:5000 \
+                            -v simon_sqlite_data:/app/data \
+                            -e ASPNETCORE_ENVIRONMENT=Development \
+                            -e ConnectionStrings__DefaultConnection="Data Source=/app/data/simon.db" \
+                            simon-backend:latest
+
+                        docker run -d \
+                            --name simon-frontend \
+                            --network simon-net \
+                            --restart unless-stopped \
+                            -p 3000:3000 \
+                            simon-frontend:latest
+                    fi
+                '''
             }
         }
 
@@ -39,12 +66,16 @@ pipeline {
             steps {
                 echo '🩺 Verifying deployment health...'
                 sh '''
+                    # Connect Jenkins container to the shared Docker network for direct probing
+                    docker network connect simon-net $(hostname) 2>/dev/null || true
+                    docker network connect simon-game_default $(hostname) 2>/dev/null || true
+
                     for i in $(seq 1 15); do
-                        if curl -s -f http://localhost:5000/api/health; then
-                            echo "✅ Application is healthy!"
+                        if curl -s -f http://backend:5000/api/health || curl -s -f http://host.docker.internal:5000/api/health || curl -s -f http://localhost:5000/api/health; then
+                            echo "✅ Backend API is healthy and operational!"
                             exit 0
                         fi
-                        echo "Waiting for backend to start ($i/15)..."
+                        echo "Waiting for service to become ready ($i/15)..."
                         sleep 2
                     done
                     echo "❌ Health check timed out!"
