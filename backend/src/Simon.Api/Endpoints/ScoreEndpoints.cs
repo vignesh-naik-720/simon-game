@@ -81,10 +81,8 @@ public static class ScoreEndpoints
             }
 
             int takeCount = Math.Clamp(limit ?? 20, 1, 100);
-            var scores = await db.GameScores
+            var scoresQuery = await db.GameScores
                 .Where(s => s.UserId == userId.Value)
-                .OrderByDescending(s => s.PlayedAt)
-                .Take(takeCount)
                 .Select(s => new
                 {
                     id = s.Id,
@@ -94,6 +92,11 @@ public static class ScoreEndpoints
                     playedAt = s.PlayedAt,
                 })
                 .ToListAsync();
+
+            var scores = scoresQuery
+                .OrderByDescending(s => s.playedAt)
+                .Take(takeCount)
+                .ToList();
 
             return Results.Ok(scores);
         });

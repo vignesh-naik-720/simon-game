@@ -27,7 +27,7 @@ public static class LeaderboardEndpoints
                 .AsNoTracking()
                 .Where(u => u.HighestScore > 0)
                 .OrderByDescending(u => u.HighestScore)
-                .ThenBy(u => u.UpdatedAt)
+                .ThenBy(u => u.Username)
                 .Take(takeCount)
                 .Select(u => new
                 {
@@ -58,7 +58,7 @@ public static class LeaderboardEndpoints
                 .AsNoTracking()
                 .Where(u => u.HighestScore > 0)
                 .OrderByDescending(u => u.HighestScore)
-                .ThenBy(u => u.UpdatedAt)
+                .ThenBy(u => u.Username)
                 .Select(u => new
                 {
                     highestScore = u.HighestScore,

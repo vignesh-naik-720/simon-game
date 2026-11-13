@@ -28,4 +28,5 @@ services:
 
 volumes:
   simon_sqlite_data:
+    name: simon_sqlite_data
     driver: local

@@ -292,3 +292,4 @@ export const LeaderboardSidebar: React.FC<LeaderboardSidebarProps> = ({
     </aside>
   );
 };
+

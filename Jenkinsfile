@@ -71,8 +71,8 @@ pipeline {
                     docker network connect simon-game_default $(hostname) 2>/dev/null || true
 
                     for i in $(seq 1 15); do
-                        if curl -s -f http://backend:5000/api/health || curl -s -f http://host.docker.internal:5000/api/health || curl -s -f http://localhost:5000/api/health; then
-                            echo "✅ Backend API is healthy and operational!"
+                        if curl -s -f http://backend:5000/api/health && curl -s -f http://backend:5000/api/leaderboard; then
+                            echo "✅ Backend API & Leaderboard are healthy and operational!"
                             exit 0
                         fi
                         echo "Waiting for service to become ready ($i/15)..."
